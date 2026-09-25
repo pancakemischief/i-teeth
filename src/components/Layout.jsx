@@ -1,30 +1,98 @@
 import "./Layout.css";
 
-// Six tab slots to match the Figma; empty ones are placeholders for future pages.
 const TABS = [
   { key: "patients", label: "Patients Database" },
   { key: "approvals", label: "Pending Approvals" },
-  { key: "slot3", label: "" },
-  { key: "slot4", label: "" },
-  { key: "slot5", label: "" },
   { key: "settings", label: "Settings" },
 ];
 
-/**
- * Shared shell: top nav + home button.
- * `active`     – key of the current tab
- * `onNavigate` – called with a tab key (wire to react-router / state)
- */
-export default function Layout({ active, onNavigate = () => {}, showHome = true, children }) {
+export default function Layout({
+  active,
+  onNavigate = () => {},
+  showHome = true,
+  currentUser = { role: "Student Clinician", email: "student@ceu.edu.ph" },
+  onSignOut = () => {},
+  children,
+}) {
   return (
     <div className="screen">
-      <nav className="navbar" aria-label="Main">
+      {/* Brand Header Banner */}
+      <header className="brand-header">
+        <div className="brand-header__left">
+          <div className="brand-badge-icon" aria-hidden="true">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="7" width="18" height="13" rx="2" />
+              <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="12" y1="11" x2="12" y2="15" />
+              <line x1="10" y1="13" x2="14" y2="13" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="brand-title">I-Teeth</h1>
+            <p className="brand-subtitle">Patient Management System</p>
+          </div>
+        </div>
+
+        <div className="brand-header__right">
+          <div className="role-pill">
+            <span
+              style={{
+                width: "7px",
+                height: "7px",
+                borderRadius: "50%",
+                background: "#4ade80",
+                display: "inline-block",
+              }}
+            />
+            <span>{currentUser.role || "Clinician"}</span>
+            {currentUser.employeeId && (
+              <span style={{ opacity: 0.85, fontSize: "10.5px" }}>
+                ({currentUser.employeeId})
+              </span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="signout-btn"
+            onClick={onSignOut}
+            title="Sign out of your account"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main Tab Navigation */}
+      <nav className="navbar" aria-label="Main Navigation">
         {TABS.map((t) => (
           <button
             key={t.key}
             className={`navbar__tab ${active === t.key ? "navbar__tab--active" : ""}`}
-            onClick={() => t.label && onNavigate(t.key)}
-            disabled={!t.label}
+            onClick={() => onNavigate(t.key)}
             aria-current={active === t.key ? "page" : undefined}
           >
             {t.label}
@@ -35,8 +103,13 @@ export default function Layout({ active, onNavigate = () => {}, showHome = true,
       <main className="screen__body">{children}</main>
 
       {showHome && (
-        <button className="home-btn" aria-label="Home" onClick={() => onNavigate("patients")}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <button
+          className="home-btn"
+          aria-label="Home"
+          onClick={() => onNavigate("patients")}
+          title="Return to Patients Database"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z" />
           </svg>
         </button>

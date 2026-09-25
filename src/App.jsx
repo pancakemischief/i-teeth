@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import Login from "./components/Login";
 import PatientRecord from "./components/PatientRecord";
 import PendingApproval from "./components/PendingApproval";
 import Settings from "./components/Settings";
@@ -27,6 +28,16 @@ const DEFAULT_PENDING = [
 
 function AppRoutes() {
   const navigate = useNavigate();
+
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("iteeth_user");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const [patients, setPatients] = useState(DEFAULT_PATIENTS);
   const [pending, setPending] = useState(DEFAULT_PENDING);
@@ -99,6 +110,27 @@ function AppRoutes() {
     }
   }, []);
 
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+    try {
+      sessionStorage.setItem("iteeth_user", JSON.stringify(user));
+    } catch {
+      // ignore
+    }
+    showToast(`✓ Welcome, ${user.role} (${user.email})`);
+    navigate("/patients");
+  };
+
+  const handleSignOut = () => {
+    setCurrentUser(null);
+    try {
+      sessionStorage.removeItem("iteeth_user");
+    } catch {
+      // ignore
+    }
+    navigate("/login");
+  };
+
   const handleNavigate = (key) => {
     if (key === "patients") navigate("/patients");
     else if (key === "approvals") navigate("/approvals");
@@ -116,7 +148,6 @@ function AppRoutes() {
 
   // Write new patient to Supabase
   const handleAddPatient = async (newPatient) => {
-    // Optimistic UI update
     setPatients((prev) => [newPatient, ...prev.filter((p) => p.id !== newPatient.id)]);
     showToast(`Saving patient ${newPatient.name} to Supabase...`);
 
@@ -130,7 +161,7 @@ function AppRoutes() {
     } else if (res.success) {
       showToast(`✓ Patient ${newPatient.name} saved to Supabase!`);
     } else {
-      showToast(`Saved locally (${res.error || "Supabase table not initialized"})`);
+      showToast(`Saved locally (${res.error || "Supabase offline"})`);
     }
   };
 
@@ -143,13 +174,12 @@ function AppRoutes() {
     if (res.success) {
       showToast(`✓ Approval request for ${newItem.name} saved to Supabase!`);
     } else {
-      showToast(`Saved locally (${res.error || "Supabase table not initialized"})`);
+      showToast(`Saved locally (${res.error || "Supabase offline"})`);
     }
   };
 
   // Approve a pending request
   const handleApprove = async (item) => {
-    // Optimistic update
     setPending((prev) => prev.filter((p) => p.id !== item.id));
     const approvedPatient = {
       id: item.id,
@@ -217,6 +247,11 @@ function AppRoutes() {
     }
   };
 
+  // Protected route wrapper
+  if (!currentUser) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <>
       {notification && (
@@ -227,13 +262,17 @@ function AppRoutes() {
             top: 14,
             right: 14,
             zIndex: 9999,
-            background: "#111",
-            color: "#fff",
-            padding: "8px 16px",
-            borderRadius: "6px",
-            fontSize: "12px",
+            background: "#0f172a",
+            color: "#ffffff",
+            padding: "10px 18px",
+            borderRadius: "12px",
+            fontSize: "12.5px",
             fontWeight: 600,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            boxShadow: "0 10px 25px -5px rgba(0,0,0,0.3)",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            border: "1px solid rgba(255,255,255,0.1)",
           }}
         >
           {notification}
@@ -241,6 +280,7 @@ function AppRoutes() {
       )}
 
       <Routes>
+        <Route path="/login" element={<Login onLogin={handleLogin} />} />
         <Route path="/" element={<Navigate to="/patients" replace />} />
         <Route
           path="/patients"
@@ -251,6 +291,8 @@ function AppRoutes() {
               onViewRecords={handleViewRecords}
               onAddPatient={handleAddPatient}
               isSyncing={isSyncing}
+              currentUser={currentUser}
+              onSignOut={handleSignOut}
             />
           }
         />
@@ -265,6 +307,8 @@ function AppRoutes() {
               onDecline={handleDecline}
               onAddPending={handleAddPending}
               isSyncing={isSyncing}
+              currentUser={currentUser}
+              onSignOut={handleSignOut}
             />
           }
         />
@@ -275,19 +319,22 @@ function AppRoutes() {
               onNavigate={handleNavigate}
               onSeedSupabase={handleSeedSupabase}
               onRefreshFromSupabase={() => refreshFromSupabase(true)}
+              currentUser={currentUser}
+              onSignOut={handleSignOut}
             />
           }
         />
         <Route path="*" element={<Navigate to="/patients" replace />} />
       </Routes>
 
-      {/* Detail / Review Modal */}
+      {/* Detail / Review Modal with Login Theme */}
       {activeModal && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            backgroundColor: "rgba(0,0,0,0.45)",
+            backgroundColor: "rgba(15, 23, 42, 0.55)",
+            backdropFilter: "blur(4px)",
             zIndex: 1000,
             display: "flex",
             alignItems: "center",
@@ -298,113 +345,187 @@ function AppRoutes() {
         >
           <div
             style={{
-              background: "#fff",
-              borderRadius: "8px",
-              padding: "20px",
               width: "100%",
               maxWidth: "480px",
-              border: "2px solid #ff4f9a",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+              background: "#ffffff",
+              borderRadius: "24px",
+              boxShadow: "0 24px 48px -12px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden",
+              border: "1px solid #e2e8f0",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#111" }}>
-                {activeModal.type === "view" ? "Patient Clinical Record" : "Review Approval Request"}
-              </h3>
+            {/* Modal Pink Header */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #e91e77 0%, #f02a80 100%)",
+                padding: "24px",
+                color: "#ffffff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    background: "rgba(255, 255, 255, 0.2)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                    <rect x="3" y="7" width="18" height="13" rx="2" />
+                    <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <line x1="12" y1="11" x2="12" y2="15" />
+                    <line x1="10" y1="13" x2="14" y2="13" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: "800" }}>
+                    {activeModal.type === "view" ? "Clinical Patient Record" : "Review Approval Request"}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: "11px", opacity: 0.9 }}>
+                    Escolar Dental Records System
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
                 style={{
-                  background: "none",
-                  border: 0,
-                  fontSize: "18px",
+                  background: "rgba(255, 255, 255, 0.2)",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: "30px",
+                  height: "30px",
+                  color: "#fff",
+                  fontSize: "14px",
+                  fontWeight: "700",
                   cursor: "pointer",
-                  fontWeight: 700,
-                  color: "#666",
+                  display: "grid",
+                  placeItems: "center",
                 }}
-                aria-label="Close"
               >
                 ✕
               </button>
             </div>
 
-            <div style={{ fontSize: "13px", lineHeight: "1.6", color: "#222", background: "#fff5f8", padding: "12px", borderRadius: "6px", marginBottom: "16px" }}>
-              <p style={{ margin: "2px 0" }}><strong>Patient ID:</strong> {activeModal.item.shortId || activeModal.item.id}</p>
-              <p style={{ margin: "2px 0" }}><strong>Patient Name:</strong> {activeModal.item.name}</p>
-              {activeModal.item.email && (
-                <p style={{ margin: "2px 0" }}><strong>Email:</strong> {activeModal.item.email}</p>
-              )}
-              {activeModal.item.phone && (
-                <p style={{ margin: "2px 0" }}><strong>Phone:</strong> {activeModal.item.phone}</p>
-              )}
-              <p style={{ margin: "2px 0" }}>
-                <strong>{activeModal.type === "view" ? "Last Visit:" : "Visit Date:"}</strong>{" "}
-                {activeModal.item.lastVisit || activeModal.item.visitDate}
-              </p>
-              <p style={{ margin: "2px 0" }}><strong>Attending Clinician:</strong> {activeModal.item.clinician}</p>
-              {activeModal.item.procedure && (
-                <p style={{ margin: "2px 0" }}><strong>Procedure:</strong> {activeModal.item.procedure}</p>
-              )}
-              {activeModal.item.notes && (
-                <p style={{ margin: "2px 0" }}><strong>Clinical Notes:</strong> {activeModal.item.notes}</p>
-              )}
-            </div>
+            <div style={{ padding: "22px 24px" }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  lineHeight: "1.7",
+                  color: "#1e293b",
+                  background: "#f8fafc",
+                  padding: "16px",
+                  borderRadius: "14px",
+                  border: "1px solid #e2e8f0",
+                  marginBottom: "20px",
+                }}
+              >
+                <p style={{ margin: "3px 0" }}>
+                  <strong style={{ color: "#475569" }}>Patient ID:</strong>{" "}
+                  <code style={{ background: "#fff", padding: "2px 6px", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
+                    {activeModal.item.shortId || activeModal.item.id}
+                  </code>
+                </p>
+                <p style={{ margin: "3px 0" }}>
+                  <strong style={{ color: "#475569" }}>Patient Name:</strong> {activeModal.item.name}
+                </p>
+                {activeModal.item.email && (
+                  <p style={{ margin: "3px 0" }}>
+                    <strong style={{ color: "#475569" }}>Email:</strong> {activeModal.item.email}
+                  </p>
+                )}
+                {activeModal.item.phone && (
+                  <p style={{ margin: "3px 0" }}>
+                    <strong style={{ color: "#475569" }}>Phone:</strong> {activeModal.item.phone}
+                  </p>
+                )}
+                <p style={{ margin: "3px 0" }}>
+                  <strong style={{ color: "#475569" }}>
+                    {activeModal.type === "view" ? "Last Visit:" : "Visit Date:"}
+                  </strong>{" "}
+                  {activeModal.item.lastVisit || activeModal.item.visitDate}
+                </p>
+                <p style={{ margin: "3px 0" }}>
+                  <strong style={{ color: "#475569" }}>Attending Clinician:</strong> {activeModal.item.clinician}
+                </p>
+                {activeModal.item.procedure && (
+                  <p style={{ margin: "3px 0" }}>
+                    <strong style={{ color: "#475569" }}>Procedure:</strong> {activeModal.item.procedure}
+                  </p>
+                )}
+                {activeModal.item.notes && (
+                  <p style={{ margin: "3px 0" }}>
+                    <strong style={{ color: "#475569" }}>Clinical Notes:</strong> {activeModal.item.notes}
+                  </p>
+                )}
+              </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
-              {activeModal.type === "review" ? (
-                <>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                {activeModal.type === "review" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDecline(activeModal.item)}
+                      style={{
+                        background: "#fef2f2",
+                        color: "#dc2626",
+                        border: "1.5px solid #fecaca",
+                        padding: "9px 18px",
+                        borderRadius: "12px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                      }}
+                    >
+                      Decline Request
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(activeModal.item)}
+                      style={{
+                        background: "linear-gradient(135deg, #e91e77 0%, #ec206f 100%)",
+                        color: "#ffffff",
+                        border: "none",
+                        padding: "9px 20px",
+                        borderRadius: "12px",
+                        fontWeight: "700",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        boxShadow: "0 4px 12px rgba(233, 30, 119, 0.3)",
+                      }}
+                    >
+                      Approve Treatment
+                    </button>
+                  </>
+                ) : (
                   <button
                     type="button"
-                    onClick={() => handleDecline(activeModal.item)}
+                    onClick={() => setActiveModal(null)}
                     style={{
-                      background: "#f0f0f0",
-                      color: "#c00",
-                      border: "1px solid #ccc",
-                      padding: "6px 12px",
-                      borderRadius: "999px",
-                      fontWeight: 600,
+                      background: "linear-gradient(135deg, #e91e77 0%, #ec206f 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      padding: "9px 22px",
+                      borderRadius: "12px",
+                      fontWeight: "700",
                       cursor: "pointer",
-                      fontSize: "12px",
+                      fontSize: "13px",
+                      boxShadow: "0 4px 12px rgba(233, 30, 119, 0.3)",
                     }}
                   >
-                    Decline
+                    Done
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(activeModal.item)}
-                    style={{
-                      background: "#ff69b4",
-                      color: "#fff",
-                      border: "0",
-                      padding: "6px 14px",
-                      borderRadius: "999px",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontSize: "12px",
-                    }}
-                  >
-                    Approve Treatment
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  style={{
-                    background: "#ff69b4",
-                    color: "#fff",
-                    border: 0,
-                    padding: "6px 14px",
-                    borderRadius: "999px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontSize: "12px",
-                  }}
-                >
-                  Close
-                </button>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
