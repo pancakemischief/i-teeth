@@ -16,15 +16,16 @@ export default function PatientRecord({
   const [query, setQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [newPatient, setNewPatient] = useState({
-    id: `0000${patients.length + 1}`,
     name: "",
-    lastVisit: new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }),
+    email: "",
+    phone: "",
     clinician: "Student Clinician, Doe, Jane",
-    procedure: "Dental Examination",
+    procedure: "Dental Examination & Charting",
+    notes: "",
   });
 
   const filtered = patients.filter((p) =>
-    `${p.id} ${p.name} ${p.clinician || ""}`.toLowerCase().includes(query.toLowerCase())
+    `${p.shortId || p.id} ${p.name} ${p.clinician || ""}`.toLowerCase().includes(query.toLowerCase())
   );
   const blanks = Math.max(0, ROWS - filtered.length);
 
@@ -33,15 +34,16 @@ export default function PatientRecord({
     if (!newPatient.name.trim()) return;
     onAddPatient({
       ...newPatient,
-      id: newPatient.id.trim() || `0000${patients.length + 1}`,
+      lastVisit: new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }),
     });
     setShowAddModal(false);
     setNewPatient({
-      id: `0000${patients.length + 2}`,
       name: "",
-      lastVisit: new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }),
+      email: "",
+      phone: "",
       clinician: "Student Clinician, Doe, Jane",
-      procedure: "Dental Examination",
+      procedure: "Dental Examination & Charting",
+      notes: "",
     });
   };
 
@@ -87,7 +89,7 @@ export default function PatientRecord({
           <tbody>
             {filtered.map((p) => (
               <tr key={p.id}>
-                <td>{p.id}</td>
+                <td>{p.shortId || (typeof p.id === "string" && p.id.length > 8 ? p.id.slice(0, 8).toUpperCase() : p.id)}</td>
                 <td>{p.name}</td>
                 <td>{p.lastVisit}</td>
                 <td>{p.clinician}</td>
@@ -127,7 +129,7 @@ export default function PatientRecord({
               borderRadius: "8px",
               padding: "20px",
               width: "100%",
-              maxWidth: "420px",
+              maxWidth: "440px",
               border: "2px solid #ff4f9a",
               boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
             }}
@@ -149,38 +151,42 @@ export default function PatientRecord({
             <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }}>
               <div>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 600, marginBottom: "4px" }}>
-                  Patient ID
+                  Patient Full Name *
                 </label>
                 <input
                   style={{ width: "100%", padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
-                  value={newPatient.id}
-                  onChange={(e) => setNewPatient({ ...newPatient, id: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, marginBottom: "4px" }}>
-                  Patient Name *
-                </label>
-                <input
-                  style={{ width: "100%", padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
-                  placeholder="e.g. Eleanor Vance"
+                  placeholder="e.g. John Doe"
                   value={newPatient.name}
                   onChange={(e) => setNewPatient({ ...newPatient, name: e.target.value })}
                   required
                 />
               </div>
 
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, marginBottom: "4px" }}>
-                  Last Visit (MM/DD/YYYY)
-                </label>
-                <input
-                  style={{ width: "100%", padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
-                  value={newPatient.lastVisit}
-                  onChange={(e) => setNewPatient({ ...newPatient, lastVisit: e.target.value })}
-                />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, marginBottom: "4px" }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    style={{ width: "100%", padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
+                    placeholder="patient@example.com"
+                    value={newPatient.email}
+                    onChange={(e) => setNewPatient({ ...newPatient, email: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 600, marginBottom: "4px" }}>
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    style={{ width: "100%", padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
+                    placeholder="(555) 000-0000"
+                    value={newPatient.phone}
+                    onChange={(e) => setNewPatient({ ...newPatient, phone: e.target.value })}
+                  />
+                </div>
               </div>
 
               <div>
@@ -196,12 +202,25 @@ export default function PatientRecord({
 
               <div>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 600, marginBottom: "4px" }}>
-                  Procedure / Treatment
+                  Procedure / Reason for Visit
                 </label>
                 <input
                   style={{ width: "100%", padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
                   value={newPatient.procedure}
                   onChange={(e) => setNewPatient({ ...newPatient, procedure: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 600, marginBottom: "4px" }}>
+                  Medical History / Notes
+                </label>
+                <textarea
+                  rows={2}
+                  style={{ width: "100%", padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "13px" }}
+                  placeholder="Allergies, chronic conditions, dental alerts..."
+                  value={newPatient.notes}
+                  onChange={(e) => setNewPatient({ ...newPatient, notes: e.target.value })}
                 />
               </div>
             </div>
@@ -234,7 +253,7 @@ export default function PatientRecord({
                   cursor: "pointer",
                 }}
               >
-                Save to Database
+                Save Patient to Supabase
               </button>
             </div>
           </form>

@@ -121,7 +121,13 @@ function AppRoutes() {
     showToast(`Saving patient ${newPatient.name} to Supabase...`);
 
     const res = await savePatientToSupabase(newPatient);
-    if (res.success) {
+    if (res.success && res.data) {
+      setPatients((prev) => [
+        res.data,
+        ...prev.filter((p) => p.id !== newPatient.id && p.id !== res.data.id),
+      ]);
+      showToast(`✓ Patient ${newPatient.name} saved to Supabase!`);
+    } else if (res.success) {
       showToast(`✓ Patient ${newPatient.name} saved to Supabase!`);
     } else {
       showToast(`Saved locally (${res.error || "Supabase table not initialized"})`);
@@ -162,6 +168,12 @@ function AppRoutes() {
 
     const res = await approvePendingInSupabase(item);
     if (res.success) {
+      if (res.data) {
+        setPatients((prev) => [
+          res.data,
+          ...prev.filter((p) => p.id !== item.id && p.id !== res.data.id),
+        ]);
+      }
       showToast(`✓ Successfully approved & synced ${item.name} in Supabase!`);
     } else {
       showToast(`✓ Approved locally (Supabase: ${res.error || "offline"})`);
@@ -318,8 +330,14 @@ function AppRoutes() {
             </div>
 
             <div style={{ fontSize: "13px", lineHeight: "1.6", color: "#222", background: "#fff5f8", padding: "12px", borderRadius: "6px", marginBottom: "16px" }}>
-              <p style={{ margin: "2px 0" }}><strong>Patient ID:</strong> {activeModal.item.id}</p>
+              <p style={{ margin: "2px 0" }}><strong>Patient ID:</strong> {activeModal.item.shortId || activeModal.item.id}</p>
               <p style={{ margin: "2px 0" }}><strong>Patient Name:</strong> {activeModal.item.name}</p>
+              {activeModal.item.email && (
+                <p style={{ margin: "2px 0" }}><strong>Email:</strong> {activeModal.item.email}</p>
+              )}
+              {activeModal.item.phone && (
+                <p style={{ margin: "2px 0" }}><strong>Phone:</strong> {activeModal.item.phone}</p>
+              )}
               <p style={{ margin: "2px 0" }}>
                 <strong>{activeModal.type === "view" ? "Last Visit:" : "Visit Date:"}</strong>{" "}
                 {activeModal.item.lastVisit || activeModal.item.visitDate}
