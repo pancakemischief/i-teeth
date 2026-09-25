@@ -1,8 +1,10 @@
 import { useState } from "react";
 import Layout from "./Layout";
+import { normalizeRole, canApproveODF } from "../lib/roleUtils";
+import { to8DigitId, DEFAULT_CLINICIAN } from "../lib/dentalService";
 
 const MOCK_PENDING = [
-  { id: "00001", name: "John Doe", visitDate: "01/01/2026", clinician: "Student Clinician, Doe, Jane" },
+  { id: "10000001", name: "John Doe", visitDate: "01/01/2026", clinician: "Dr. Jane Doe, MD" },
 ];
 const ROWS = 7;
 
@@ -19,34 +21,41 @@ export default function PendingApproval({
 }) {
   const [query, setQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+
+  const normRole = normalizeRole(currentUser?.role);
+  const allowApprove = canApproveODF(normRole);
+
   const [newItem, setNewItem] = useState({
-    id: "REQ-1082",
+    id: to8DigitId(pending.length + 10),
     name: "",
     visitDate: "01/01/2026",
-    clinician: currentUser?.role === "Student Clinician" ? "Student Clinician, Doe, Jane" : (currentUser?.email || "Staff Clinician"),
-    procedure: "Root Canal Therapy #19",
+    clinician: DEFAULT_CLINICIAN,
+    procedure: "Oral Diagnosis Form (ODF)",
     notes: "Requires attending faculty clinical evaluation and sign-off.",
   });
 
-  const filtered = pending.filter((p) =>
-    `${p.id} ${p.name} ${p.clinician || ""}`.toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered = pending.filter((p) => {
+    const formattedId = to8DigitId(p.id);
+    return `${formattedId} ${p.name} ${p.clinician || ""}`.toLowerCase().includes(query.toLowerCase());
+  });
   const blanks = Math.max(0, ROWS - filtered.length);
 
   const handleCreate = (e) => {
     e.preventDefault();
     if (!newItem.name.trim()) return;
+    const clean8DigitId = to8DigitId(newItem.id || pending.length + 10);
     onAddPending({
       ...newItem,
-      id: newItem.id.trim() || `REQ-${Date.now().toString().slice(-4)}`,
+      id: clean8DigitId,
+      clinician: newItem.clinician || DEFAULT_CLINICIAN,
     });
     setShowAddModal(false);
     setNewItem({
-      id: `REQ-${Date.now().toString().slice(-4)}`,
+      id: to8DigitId(pending.length + 11),
       name: "",
-      visitDate: new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }),
-      clinician: currentUser?.role === "Student Clinician" ? "Student Clinician, Doe, Jane" : (currentUser?.email || "Staff Clinician"),
-      procedure: "Root Canal Therapy #19",
+      visitDate: "01/01/2026",
+      clinician: DEFAULT_CLINICIAN,
+      procedure: "Oral Diagnosis Form (ODF)",
       notes: "Requires attending faculty clinical evaluation and sign-off.",
     });
   };
@@ -77,7 +86,7 @@ export default function PendingApproval({
             </svg>
             <input
               className="pill pill--search"
-              placeholder="Search pending approvals..."
+              placeholder="Search approvals (8-digit ID or name)..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -92,7 +101,7 @@ export default function PendingApproval({
             type="button"
             onClick={() => setShowAddModal(true)}
           >
-            + New Request
+            + New ODF Submission
           </button>
         </div>
 
@@ -117,7 +126,7 @@ export default function PendingApproval({
         <table className="table">
           <thead>
             <tr>
-              <th>Request ID</th>
+              <th>Patient / Request ID</th>
               <th>Patient Name</th>
               <th>Visit Date (MM/DD/YYYY)</th>
               <th>Attending Clinician</th>
@@ -125,33 +134,55 @@ export default function PendingApproval({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => (
-              <tr key={p.id}>
-                <td style={{ fontFamily: "monospace", fontSize: "12.5px", color: "#0f172a" }}>
-                  {p.id}
-                </td>
-                <td style={{ fontWeight: 600, color: "#1e293b" }}>{p.name}</td>
-                <td>{p.visitDate}</td>
-                <td>{p.clinician}</td>
-                <td style={{ textAlign: "right", paddingRight: "20px" }}>
-                  <button className="table__action" onClick={() => onReview(p)}>
-                    Review
-                  </button>
-                  <button
-                    className="table__action table__action--approve"
-                    onClick={() => onApprove(p)}
-                  >
-                    Approve
-                  </button>
-                  <button
-                    className="table__action table__action--decline"
-                    onClick={() => onDecline(p)}
-                  >
-                    Decline
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {filtered.map((p) => {
+              const formatted8DigitId = to8DigitId(p.id);
+              return (
+                <tr key={p.id}>
+                  <td style={{ fontFamily: "monospace", fontSize: "13px", fontWeight: "700", color: "#0f172a", letterSpacing: "0.5px" }}>
+                    {formatted8DigitId}
+                  </td>
+                  <td style={{ fontWeight: 600, color: "#1e293b" }}>{p.name}</td>
+                  <td>{p.visitDate}</td>
+                  <td>{p.clinician || DEFAULT_CLINICIAN}</td>
+                  <td style={{ textAlign: "right", paddingRight: "20px" }}>
+                    <button className="table__action" onClick={() => onReview(p)}>
+                      Review ODF
+                    </button>
+                    {allowApprove ? (
+                      <>
+                        <button
+                          className="table__action table__action--approve"
+                          onClick={() => onApprove(p)}
+                          title="Faculty Approval for Treatment"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="table__action table__action--decline"
+                          onClick={() => onDecline(p)}
+                          title="Decline or Request Revision"
+                        >
+                          Decline
+                        </button>
+                      </>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          color: "#d97706",
+                          background: "#fef3c7",
+                          padding: "3px 8px",
+                          borderRadius: "999px",
+                          fontWeight: "600",
+                        }}
+                      >
+                        Pending Faculty Sign-off
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {Array.from({ length: blanks }, (_, i) => (
               <tr key={`blank-${i}`}>
                 <td colSpan={5} style={{ height: "46px" }} />
@@ -189,7 +220,6 @@ export default function PendingApproval({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Pink Header */}
             <div
               style={{
                 background: "linear-gradient(135deg, #e91e77 0%, #f02a80 100%)",
@@ -225,7 +255,7 @@ export default function PendingApproval({
                     Submit Faculty Approval Request
                   </h3>
                   <p style={{ margin: 0, fontSize: "11px", opacity: 0.9 }}>
-                    Escolar Dental Records System
+                    8-Digit Oral Diagnosis Form (ODF)
                   </p>
                 </div>
               </div>
@@ -243,30 +273,65 @@ export default function PendingApproval({
                   fontSize: "14px",
                   fontWeight: "700",
                   cursor: "pointer",
-                  display: "grid",
-                  placeItems: "center",
                 }}
               >
                 ✕
               </button>
             </div>
 
-            {/* Modal Body */}
             <form onSubmit={handleCreate} style={{ padding: "22px 24px" }}>
               <div style={{ display: "grid", gap: "14px", marginBottom: "20px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "10px" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#334155", textTransform: "uppercase", marginBottom: "6px" }}>
+                      Patient ID (8 Digits) *
+                    </label>
+                    <input
+                      style={{
+                        width: "100%",
+                        height: "44px",
+                        padding: "0 12px",
+                        background: "#f8fafc",
+                        border: "1.5px solid #cbd5e1",
+                        borderRadius: "12px",
+                        fontSize: "13px",
+                        fontFamily: "monospace",
+                        fontWeight: "700",
+                        color: "#0f172a",
+                      }}
+                      value={newItem.id}
+                      onChange={(e) => setNewItem({ ...newItem, id: e.target.value.replace(/\D/g, "").slice(0, 8) })}
+                      maxLength={8}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#334155", textTransform: "uppercase", marginBottom: "6px" }}>
+                      Patient Full Name *
+                    </label>
+                    <input
+                      style={{
+                        width: "100%",
+                        height: "44px",
+                        padding: "0 14px",
+                        background: "#f8fafc",
+                        border: "1.5px solid #cbd5e1",
+                        borderRadius: "12px",
+                        fontSize: "13.5px",
+                        color: "#0f172a",
+                      }}
+                      placeholder="e.g. Luke Skywalker"
+                      value={newItem.name}
+                      onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      color: "#334155",
-                      letterSpacing: "0.5px",
-                      textTransform: "uppercase",
-                      marginBottom: "6px",
-                    }}
-                  >
-                    Patient Full Name *
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#334155", textTransform: "uppercase", marginBottom: "6px" }}>
+                    Attending Clinician (Placeholder)
                   </label>
                   <input
                     style={{
@@ -278,92 +343,15 @@ export default function PendingApproval({
                       borderRadius: "12px",
                       fontSize: "13.5px",
                       color: "#0f172a",
-                      outline: "none",
                     }}
-                    placeholder="e.g. Luke Skywalker"
-                    value={newItem.name}
-                    onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-                    required
+                    value={newItem.clinician}
+                    onChange={(e) => setNewItem({ ...newItem, clinician: e.target.value })}
                   />
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        color: "#334155",
-                        letterSpacing: "0.5px",
-                        textTransform: "uppercase",
-                        marginBottom: "6px",
-                      }}
-                    >
-                      Visit Date
-                    </label>
-                    <input
-                      style={{
-                        width: "100%",
-                        height: "44px",
-                        padding: "0 14px",
-                        background: "#f8fafc",
-                        border: "1.5px solid #cbd5e1",
-                        borderRadius: "12px",
-                        fontSize: "13.5px",
-                        color: "#0f172a",
-                        outline: "none",
-                      }}
-                      value={newItem.visitDate}
-                      onChange={(e) => setNewItem({ ...newItem, visitDate: e.target.value })}
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        color: "#334155",
-                        letterSpacing: "0.5px",
-                        textTransform: "uppercase",
-                        marginBottom: "6px",
-                      }}
-                    >
-                      Attending Clinician
-                    </label>
-                    <input
-                      style={{
-                        width: "100%",
-                        height: "44px",
-                        padding: "0 14px",
-                        background: "#f8fafc",
-                        border: "1.5px solid #cbd5e1",
-                        borderRadius: "12px",
-                        fontSize: "13.5px",
-                        color: "#0f172a",
-                        outline: "none",
-                      }}
-                      value={newItem.clinician}
-                      onChange={(e) => setNewItem({ ...newItem, clinician: e.target.value })}
-                    />
-                  </div>
-                </div>
-
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      color: "#334155",
-                      letterSpacing: "0.5px",
-                      textTransform: "uppercase",
-                      marginBottom: "6px",
-                    }}
-                  >
-                    Procedure Description
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#334155", textTransform: "uppercase", marginBottom: "6px" }}>
+                    Procedure / ODF Diagnosis
                   </label>
                   <input
                     style={{
@@ -375,7 +363,6 @@ export default function PendingApproval({
                       borderRadius: "12px",
                       fontSize: "13.5px",
                       color: "#0f172a",
-                      outline: "none",
                     }}
                     value={newItem.procedure}
                     onChange={(e) => setNewItem({ ...newItem, procedure: e.target.value })}
@@ -383,17 +370,7 @@ export default function PendingApproval({
                 </div>
 
                 <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      color: "#334155",
-                      letterSpacing: "0.5px",
-                      textTransform: "uppercase",
-                      marginBottom: "6px",
-                    }}
-                  >
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: "700", color: "#334155", textTransform: "uppercase", marginBottom: "6px" }}>
                     Clinical Case Notes & Indication
                   </label>
                   <textarea

@@ -1,16 +1,38 @@
 import { supabase } from "./supabaseClient.js";
 
 /**
+ * Ensures patient IDs are consistently strictly 8 digits (numeric only)
+ */
+export function to8DigitId(id, fallbackIndex = 1) {
+  if (!id) return String(10000000 + Number(fallbackIndex));
+  const cleanDigits = String(id).replace(/\D/g, "");
+  if (cleanDigits.length === 8) return cleanDigits;
+  if (cleanDigits.length > 8) return cleanDigits.slice(0, 8);
+  if (cleanDigits.length > 0) return cleanDigits.padStart(8, "0");
+
+  // If string has letters/UUID, deterministically hash to an 8-digit number
+  let hash = 0;
+  const str = String(id);
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  const posHash = Math.abs(hash) % 90000000 + 10000000;
+  return String(posHash);
+}
+
+/**
  * Checks if a string is a valid UUID
  */
 function isUuid(str) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str));
 }
 
+export const DEFAULT_CLINICIAN = "Dr. Jane Doe, MD";
+
 /**
  * Normalizes a database row from `patients` table to standard UI patient object
  */
-function normalizePatient(row) {
+function normalizePatient(row, index = 1) {
   let meta = {};
   if (row.medical_history) {
     try {
@@ -33,9 +55,12 @@ function normalizePatient(row) {
       })
     : "01/01/2026";
 
+  const eightDigitId = to8DigitId(meta.eightDigitId || row.eight_digit_id || row.id, index);
+
   return {
-    id: row.id,
-    shortId: meta.shortId || (isUuid(row.id) ? row.id.slice(0, 5).toUpperCase() : row.id),
+    id: eightDigitId,
+    dbId: row.id,
+    eightDigitId,
     name: fullName,
     firstName: row.first_name || "",
     lastName: row.last_name || "",
@@ -44,24 +69,28 @@ function normalizePatient(row) {
     gender: row.gender || "",
     dateOfBirth: row.date_of_birth || "",
     lastVisit: meta.lastVisit || row.last_visit || formattedDate,
-    clinician: meta.clinician || row.clinician || "Student Clinician, Doe, Jane",
+    clinician: meta.clinician || row.clinician || DEFAULT_CLINICIAN,
     procedure: meta.procedure || row.procedure || "Dental Examination & Charting",
     notes: meta.notes || (typeof row.medical_history === "string" ? row.medical_history : ""),
+    odfData: meta.odfData || null,
   };
 }
 
 /**
  * Normalizes a database row from `pending_approvals` table
  */
-function normalizePending(row) {
+function normalizePending(row, index = 1) {
   return {
-    id: String(row.id || ""),
+    id: to8DigitId(row.id, index),
     name: row.name || "Unknown Patient",
     visitDate: row.visit_date || row.visitDate || "01/01/2026",
-    clinician: row.clinician || "Student Clinician, Doe, Jane",
-    procedure: row.procedure || "Clinical Evaluation",
+    clinician: row.clinician || DEFAULT_CLINICIAN,
+    procedure: row.procedure || "Oral Diagnosis Form (ODF)",
     notes: row.notes || "",
     status: row.status || "pending",
+    type: row.type || "ODF Submission",
+    odfDetails: row.odf_details || null,
+    submittedAt: row.created_at || new Date().toISOString(),
   };
 }
 
@@ -83,7 +112,7 @@ export async function fetchPatientsFromSupabase() {
     return {
       success: true,
       error: null,
-      data: Array.isArray(data) ? data.map(normalizePatient) : [],
+      data: Array.isArray(data) ? data.map((r, i) => normalizePatient(r, i + 1)) : [],
     };
   } catch (err) {
     console.warn("[Supabase] Unexpected error fetching patients:", err);
@@ -110,7 +139,7 @@ export async function fetchPendingFromSupabase() {
     return {
       success: true,
       error: null,
-      data: Array.isArray(data) ? data.map(normalizePending) : [],
+      data: Array.isArray(data) ? data.map((r, i) => normalizePending(r, i + 1)) : [],
     };
   } catch (err) {
     console.warn("[Supabase] Unexpected error fetching pending:", err);
@@ -119,18 +148,18 @@ export async function fetchPendingFromSupabase() {
 }
 
 /**
- * Save or update a patient in Supabase matching the exact `patients` table schema:
- * (id: uuid, first_name: text, last_name: text, email: text, phone: text,
- *  date_of_birth: date, gender: text, medical_history: text)
+ * Save or update a patient in Supabase
  */
 export async function savePatientToSupabase(patient) {
   try {
     const nameParts = (patient.name || "").trim().split(/\s+/);
     const firstName = patient.firstName || nameParts[0] || "Unnamed";
     const lastName = patient.lastName || nameParts.slice(1).join(" ") || "Patient";
+    const numericId = to8DigitId(patient.id || patient.eightDigitId);
 
     const meta = {
-      clinician: patient.clinician || "Student Clinician, Doe, Jane",
+      eightDigitId: numericId,
+      clinician: patient.clinician || DEFAULT_CLINICIAN,
       lastVisit:
         patient.lastVisit ||
         new Date().toLocaleDateString("en-US", {
@@ -140,7 +169,7 @@ export async function savePatientToSupabase(patient) {
         }),
       procedure: patient.procedure || "Dental Examination & Charting",
       notes: patient.notes || "",
-      shortId: patient.shortId || (patient.id && !isUuid(patient.id) ? patient.id : undefined),
+      odfData: patient.odfData || null,
     };
 
     const payload = {
@@ -154,9 +183,8 @@ export async function savePatientToSupabase(patient) {
       updated_at: new Date().toISOString(),
     };
 
-    // If patient has a valid UUID, include it for upsert
-    if (patient.id && isUuid(patient.id)) {
-      payload.id = patient.id;
+    if (patient.dbId && isUuid(patient.dbId)) {
+      payload.id = patient.dbId;
       const { data, error } = await supabase
         .from("patients")
         .upsert(payload, { onConflict: "id" })
@@ -168,7 +196,6 @@ export async function savePatientToSupabase(patient) {
       }
       return { success: true, data: data?.[0] ? normalizePatient(data[0]) : null };
     } else {
-      // Auto-generate UUID in database
       const { data, error } = await supabase
         .from("patients")
         .insert(payload)
@@ -187,13 +214,13 @@ export async function savePatientToSupabase(patient) {
 }
 
 /**
- * Add or update pending approval in Supabase matching the exact `pending_approvals` table schema:
- * (id: text, name: text, visit_date: text, clinician: text, procedure: text, notes: text, status: text)
+ * Submit an Oral Diagnosis Form (ODF) or pending approval
  */
 export async function savePendingToSupabase(item) {
   try {
+    const numericId = to8DigitId(item.id);
     const payload = {
-      id: String(item.id || `REQ-${Date.now().toString().slice(-5)}`),
+      id: numericId,
       name: item.name,
       visit_date:
         item.visitDate ||
@@ -202,8 +229,8 @@ export async function savePendingToSupabase(item) {
           day: "2-digit",
           year: "numeric",
         }),
-      clinician: item.clinician || "Student Clinician, Doe, Jane",
-      procedure: item.procedure || "Clinical Evaluation",
+      clinician: item.clinician || DEFAULT_CLINICIAN,
+      procedure: item.procedure || "Oral Diagnosis Form (ODF)",
       notes: item.notes || null,
       status: item.status || "pending",
     };
@@ -226,13 +253,10 @@ export async function savePendingToSupabase(item) {
 }
 
 /**
- * Approve a pending request:
- * 1. Updates status in `pending_approvals` to 'approved'
- * 2. Creates/updates the patient in `patients` table
+ * Approve a pending ODF request
  */
 export async function approvePendingInSupabase(item) {
   try {
-    // 1. Update status in pending_approvals
     const { error: pendingErr } = await supabase
       .from("pending_approvals")
       .update({ status: "approved" })
@@ -242,13 +266,14 @@ export async function approvePendingInSupabase(item) {
       console.warn("[Supabase] approvePending update error:", pendingErr.message);
     }
 
-    // 2. Insert into patients table
     const patientResult = await savePatientToSupabase({
+      id: item.id,
       name: item.name,
       lastVisit: item.visitDate,
-      clinician: item.clinician,
-      procedure: item.procedure,
-      notes: item.notes || "Approved faculty procedure.",
+      clinician: item.clinician || DEFAULT_CLINICIAN,
+      procedure: item.procedure || "Approved Oral Diagnosis Form (ODF)",
+      notes: item.notes || "Approved faculty procedure and ODF documentation.",
+      odfData: item.odfDetails || null,
     });
 
     return { success: true, data: patientResult.data };
@@ -259,7 +284,7 @@ export async function approvePendingInSupabase(item) {
 }
 
 /**
- * Decline a pending request in Supabase
+ * Decline a pending ODF request
  */
 export async function declinePendingInSupabase(item) {
   try {

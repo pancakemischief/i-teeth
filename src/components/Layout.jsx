@@ -1,10 +1,5 @@
 import "./Layout.css";
-
-const TABS = [
-  { key: "patients", label: "Patients Database" },
-  { key: "approvals", label: "Pending Approvals" },
-  { key: "settings", label: "Settings" },
-];
+import { normalizeRole, canViewPendingApprovals } from "../lib/roleUtils";
 
 export default function Layout({
   active,
@@ -14,6 +9,25 @@ export default function Layout({
   onSignOut = () => {},
   children,
 }) {
+  const normRole = normalizeRole(currentUser?.role);
+
+  // Dynamic tab slots based on User Role specifications
+  const tabs = [];
+
+  if (normRole === "patient") {
+    tabs.push({ key: "patients", label: "My Patient Record" });
+    tabs.push({ key: "settings", label: "Settings & Profile" });
+  } else {
+    tabs.push({ key: "patients", label: "Patients Database" });
+    if (canViewPendingApprovals(normRole)) {
+      tabs.push({
+        key: "approvals",
+        label: normRole === "student_clinician" ? "ODF Submissions" : "Pending Approvals",
+      });
+    }
+    tabs.push({ key: "settings", label: "Settings" });
+  }
+
   return (
     <div className="screen">
       {/* Brand Header Banner */}
@@ -49,12 +63,12 @@ export default function Layout({
                 width: "7px",
                 height: "7px",
                 borderRadius: "50%",
-                background: "#4ade80",
+                background: normRole === "admin" ? "#38bdf8" : normRole === "patient" ? "#fbbf24" : "#4ade80",
                 display: "inline-block",
               }}
             />
-            <span>{currentUser.role || "Clinician"}</span>
-            {currentUser.employeeId && (
+            <span>{currentUser?.role || "Clinician"}</span>
+            {currentUser?.employeeId && (
               <span style={{ opacity: 0.85, fontSize: "10.5px" }}>
                 ({currentUser.employeeId})
               </span>
@@ -65,7 +79,7 @@ export default function Layout({
             type="button"
             className="signout-btn"
             onClick={onSignOut}
-            title="Sign out of your account"
+            title="Sign out or switch role"
           >
             <svg
               width="14"
@@ -88,7 +102,7 @@ export default function Layout({
 
       {/* Main Tab Navigation */}
       <nav className="navbar" aria-label="Main Navigation">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             className={`navbar__tab ${active === t.key ? "navbar__tab--active" : ""}`}
@@ -107,7 +121,7 @@ export default function Layout({
           className="home-btn"
           aria-label="Home"
           onClick={() => onNavigate("patients")}
-          title="Return to Patients Database"
+          title="Return to Home"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z" />

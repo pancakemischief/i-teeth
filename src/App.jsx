@@ -11,19 +11,21 @@ import {
   savePendingToSupabase,
   approvePendingInSupabase,
   declinePendingInSupabase,
+  to8DigitId,
+  DEFAULT_CLINICIAN,
 } from "./lib/dentalService";
 
+// Strictly 8-Digit Patient IDs and Dr. Jane Doe, MD as Attending Clinician
 const DEFAULT_PATIENTS = [
-  { id: "00001", name: "John Doe", lastVisit: "01/01/2026", clinician: "Student Clinician, Doe, Jane", procedure: "Biannual Prophylaxis & Bitewing X-Rays" },
-  { id: "00002", name: "Sarah Connor", lastVisit: "02/14/2026", clinician: "Dr. Aris Thorne", procedure: "Endodontic Therapy #14" },
-  { id: "00003", name: "Marcus Wright", lastVisit: "03/10/2026", clinician: "Student Clinician, Smith, Alex", procedure: "Composite Restoration #30 MOD" },
-  { id: "00004", name: "Kyle Reese", lastVisit: "03/18/2026", clinician: "Dr. Emily Chen", procedure: "Gingival Scaling & Root Planing" },
+  { id: "10000001", eightDigitId: "10000001", name: "John Doe", lastVisit: "01/01/2026", clinician: DEFAULT_CLINICIAN, procedure: "Biannual Prophylaxis & Bitewing X-Rays" },
+  { id: "10000002", eightDigitId: "10000002", name: "Sarah Connor", lastVisit: "02/14/2026", clinician: DEFAULT_CLINICIAN, procedure: "Endodontic Therapy #14" },
+  { id: "10000003", eightDigitId: "10000003", name: "Marcus Wright", lastVisit: "03/10/2026", clinician: DEFAULT_CLINICIAN, procedure: "Composite Restoration #30 MOD" },
+  { id: "10000004", eightDigitId: "10000004", name: "Kyle Reese", lastVisit: "03/18/2026", clinician: DEFAULT_CLINICIAN, procedure: "Gingival Scaling & Root Planing" },
 ];
 
 const DEFAULT_PENDING = [
-  { id: "00001", name: "John Doe", visitDate: "01/01/2026", clinician: "Student Clinician, Doe, Jane", procedure: "Routine Dental Cleaning & Examination", notes: "Patient reports mild sensitivity on lower right quadrant." },
-  { id: "00005", name: "Grace Brewster", visitDate: "03/22/2026", clinician: "Student Clinician, Doe, Jane", procedure: "Composite Restoration Tooth #19", notes: "Class II resin restoration required. Supervising faculty sign-off requested." },
-  { id: "00006", name: "Arthur Dent", visitDate: "03/24/2026", clinician: "Student Clinician, Smith, Alex", procedure: "Panoramic Radiograph Evaluation", notes: "Full mouth series review for third molar impaction." },
+  { id: "10000005", name: "Grace Brewster", visitDate: "03/22/2026", clinician: DEFAULT_CLINICIAN, procedure: "Composite Restoration Tooth #19", notes: "Class II resin restoration required. Supervising faculty sign-off requested." },
+  { id: "10000006", name: "Arthur Dent", visitDate: "03/24/2026", clinician: DEFAULT_CLINICIAN, procedure: "Panoramic Radiograph Evaluation", notes: "Full mouth series review for third molar impaction." },
 ];
 
 function AppRoutes() {
@@ -131,6 +133,21 @@ function AppRoutes() {
     navigate("/login");
   };
 
+  const handleSwitchRole = (newRole) => {
+    const updated = {
+      ...currentUser,
+      role: newRole,
+      employeeId: newRole.includes("Faculty") ? "FAC-2026-081" : newRole.includes("Admin") ? "ADM-2026-001" : null,
+    };
+    setCurrentUser(updated);
+    try {
+      sessionStorage.setItem("iteeth_user", JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+    showToast(`Role switched to: ${newRole}`);
+  };
+
   const handleNavigate = (key) => {
     if (key === "patients") navigate("/patients");
     else if (key === "approvals") navigate("/approvals");
@@ -148,31 +165,41 @@ function AppRoutes() {
 
   // Write new patient to Supabase
   const handleAddPatient = async (newPatient) => {
-    setPatients((prev) => [newPatient, ...prev.filter((p) => p.id !== newPatient.id)]);
-    showToast(`Saving patient ${newPatient.name} to Supabase...`);
+    const formatted = {
+      ...newPatient,
+      id: to8DigitId(newPatient.id),
+      clinician: newPatient.clinician || DEFAULT_CLINICIAN,
+    };
+    setPatients((prev) => [formatted, ...prev.filter((p) => p.id !== formatted.id)]);
+    showToast(`Saving patient #${formatted.id} (${formatted.name}) to Supabase...`);
 
-    const res = await savePatientToSupabase(newPatient);
+    const res = await savePatientToSupabase(formatted);
     if (res.success && res.data) {
       setPatients((prev) => [
         res.data,
-        ...prev.filter((p) => p.id !== newPatient.id && p.id !== res.data.id),
+        ...prev.filter((p) => p.id !== formatted.id && p.id !== res.data.id),
       ]);
-      showToast(`✓ Patient ${newPatient.name} saved to Supabase!`);
+      showToast(`✓ Patient #${formatted.id} saved to Supabase!`);
     } else if (res.success) {
-      showToast(`✓ Patient ${newPatient.name} saved to Supabase!`);
+      showToast(`✓ Patient #${formatted.id} saved to Supabase!`);
     } else {
       showToast(`Saved locally (${res.error || "Supabase offline"})`);
     }
   };
 
-  // Write new pending request to Supabase
-  const handleAddPending = async (newItem) => {
-    setPending((prev) => [newItem, ...prev.filter((p) => p.id !== newItem.id)]);
-    showToast(`Submitting request for ${newItem.name} to Supabase...`);
+  // Submit Oral Diagnosis Form (ODF) or pending approval
+  const handleUploadODF = async (odfItem) => {
+    const formatted = {
+      ...odfItem,
+      id: to8DigitId(odfItem.id),
+      clinician: odfItem.clinician || DEFAULT_CLINICIAN,
+    };
+    setPending((prev) => [formatted, ...prev.filter((p) => p.id !== formatted.id)]);
+    showToast(`Submitting ODF for Patient #${formatted.id} to Supabase...`);
 
-    const res = await savePendingToSupabase(newItem);
+    const res = await savePendingToSupabase(formatted);
     if (res.success) {
-      showToast(`✓ Approval request for ${newItem.name} saved to Supabase!`);
+      showToast(`✓ ODF for Patient #${formatted.id} submitted for faculty review!`);
     } else {
       showToast(`Saved locally (${res.error || "Supabase offline"})`);
     }
@@ -180,31 +207,33 @@ function AppRoutes() {
 
   // Approve a pending request
   const handleApprove = async (item) => {
-    setPending((prev) => prev.filter((p) => p.id !== item.id));
+    const formattedId = to8DigitId(item.id);
+    setPending((prev) => prev.filter((p) => to8DigitId(p.id) !== formattedId));
     const approvedPatient = {
-      id: item.id,
+      id: formattedId,
+      eightDigitId: formattedId,
       name: item.name,
       lastVisit: item.visitDate || new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }),
-      clinician: item.clinician,
+      clinician: item.clinician || DEFAULT_CLINICIAN,
       procedure: item.procedure,
       notes: item.notes,
     };
     setPatients((prev) => [
       approvedPatient,
-      ...prev.filter((p) => p.id !== item.id),
+      ...prev.filter((p) => to8DigitId(p.id) !== formattedId),
     ]);
     setActiveModal(null);
-    showToast(`✓ Approved ${item.name}. Syncing with Supabase...`);
+    showToast(`✓ Approved #${formattedId} (${item.name}). Syncing with Supabase...`);
 
     const res = await approvePendingInSupabase(item);
     if (res.success) {
       if (res.data) {
         setPatients((prev) => [
           res.data,
-          ...prev.filter((p) => p.id !== item.id && p.id !== res.data.id),
+          ...prev.filter((p) => to8DigitId(p.id) !== formattedId && p.id !== res.data.id),
         ]);
       }
-      showToast(`✓ Successfully approved & synced ${item.name} in Supabase!`);
+      showToast(`✓ Successfully approved & synced #${formattedId} in Supabase!`);
     } else {
       showToast(`✓ Approved locally (Supabase: ${res.error || "offline"})`);
     }
@@ -212,13 +241,14 @@ function AppRoutes() {
 
   // Decline a pending request
   const handleDecline = async (item) => {
-    setPending((prev) => prev.filter((p) => p.id !== item.id));
+    const formattedId = to8DigitId(item.id);
+    setPending((prev) => prev.filter((p) => to8DigitId(p.id) !== formattedId));
     setActiveModal(null);
-    showToast(`Declining ${item.name}...`);
+    showToast(`Declining #${formattedId} (${item.name})...`);
 
     const res = await declinePendingInSupabase(item);
     if (res.success) {
-      showToast(`✕ Declined request for ${item.name} in Supabase.`);
+      showToast(`✕ Declined request for #${formattedId} in Supabase.`);
     } else {
       showToast(`✕ Declined request locally.`);
     }
@@ -226,7 +256,7 @@ function AppRoutes() {
 
   // Seed sample records into Supabase
   const handleSeedSupabase = async () => {
-    showToast("Seeding sample data to Supabase...");
+    showToast("Seeding 8-digit sample data to Supabase...");
     let savedPatients = 0;
     let savedPending = 0;
 
@@ -290,6 +320,7 @@ function AppRoutes() {
               onNavigate={handleNavigate}
               onViewRecords={handleViewRecords}
               onAddPatient={handleAddPatient}
+              onUploadODF={handleUploadODF}
               isSyncing={isSyncing}
               currentUser={currentUser}
               onSignOut={handleSignOut}
@@ -305,7 +336,7 @@ function AppRoutes() {
               onReview={handleReview}
               onApprove={handleApprove}
               onDecline={handleDecline}
-              onAddPending={handleAddPending}
+              onAddPending={handleUploadODF}
               isSyncing={isSyncing}
               currentUser={currentUser}
               onSignOut={handleSignOut}
@@ -321,13 +352,14 @@ function AppRoutes() {
               onRefreshFromSupabase={() => refreshFromSupabase(true)}
               currentUser={currentUser}
               onSignOut={handleSignOut}
+              onSwitchRole={handleSwitchRole}
             />
           }
         />
         <Route path="*" element={<Navigate to="/patients" replace />} />
       </Routes>
 
-      {/* Detail / Review Modal with Login Theme */}
+      {/* Detail / Review Modal with 8-Digit ID and Dr. Jane Doe, MD */}
       {activeModal && (
         <div
           style={{
@@ -355,7 +387,6 @@ function AppRoutes() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Pink Header */}
             <div
               style={{
                 background: "linear-gradient(135deg, #e91e77 0%, #f02a80 100%)",
@@ -387,7 +418,7 @@ function AppRoutes() {
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: "17px", fontWeight: "800" }}>
-                    {activeModal.type === "view" ? "Clinical Patient Record" : "Review Approval Request"}
+                    {activeModal.type === "view" ? "Clinical Patient Record" : "Review Oral Diagnosis Form (ODF)"}
                   </h3>
                   <p style={{ margin: 0, fontSize: "11px", opacity: 0.9 }}>
                     Escolar Dental Records System
@@ -430,9 +461,9 @@ function AppRoutes() {
                 }}
               >
                 <p style={{ margin: "3px 0" }}>
-                  <strong style={{ color: "#475569" }}>Patient ID:</strong>{" "}
-                  <code style={{ background: "#fff", padding: "2px 6px", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
-                    {activeModal.item.shortId || activeModal.item.id}
+                  <strong style={{ color: "#475569" }}>Patient ID (8 Digits):</strong>{" "}
+                  <code style={{ background: "#fff", padding: "2px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontWeight: "700", color: "#0f172a" }}>
+                    {to8DigitId(activeModal.item.id)}
                   </code>
                 </p>
                 <p style={{ margin: "3px 0" }}>
@@ -455,16 +486,16 @@ function AppRoutes() {
                   {activeModal.item.lastVisit || activeModal.item.visitDate}
                 </p>
                 <p style={{ margin: "3px 0" }}>
-                  <strong style={{ color: "#475569" }}>Attending Clinician:</strong> {activeModal.item.clinician}
+                  <strong style={{ color: "#475569" }}>Attending Clinician:</strong> {activeModal.item.clinician || DEFAULT_CLINICIAN}
                 </p>
                 {activeModal.item.procedure && (
                   <p style={{ margin: "3px 0" }}>
-                    <strong style={{ color: "#475569" }}>Procedure:</strong> {activeModal.item.procedure}
+                    <strong style={{ color: "#475569" }}>Procedure / Diagnosis:</strong> {activeModal.item.procedure}
                   </p>
                 )}
                 {activeModal.item.notes && (
                   <p style={{ margin: "3px 0" }}>
-                    <strong style={{ color: "#475569" }}>Clinical Notes:</strong> {activeModal.item.notes}
+                    <strong style={{ color: "#475569" }}>Clinical Findings:</strong> {activeModal.item.notes}
                   </p>
                 )}
               </div>
@@ -503,7 +534,7 @@ function AppRoutes() {
                         boxShadow: "0 4px 12px rgba(233, 30, 119, 0.3)",
                       }}
                     >
-                      Approve Treatment
+                      Faculty Approve
                     </button>
                   </>
                 ) : (
